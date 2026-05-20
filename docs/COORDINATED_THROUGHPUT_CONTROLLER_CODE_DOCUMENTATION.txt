@@ -1,0 +1,1230 @@
+Coordinated Throughput Controller - Code Documentation
+======================================================
+
+Purpose Of This Document
+------------------------
+
+This document explains the code behind the custom JMeter plugin named:
+
+    Coordinated Throughput Controller
+
+It is intended for developers who need to understand, debug, maintain, or
+extend the plugin implementation.
+
+The user-facing documentation is in:
+
+    COORDINATED_THROUGHPUT_CONTROLLER_DOCUMENTATION.txt
+
+This file focuses on implementation details: class responsibilities, runtime
+state, JMeter lifecycle hooks, the balancing algorithm, GUI wiring, jar
+packaging, and tests.
+
+
+Source Files
+------------
+
+Runtime controller:
+
+    src/components/src/main/java/org/apache/jmeter/control/CoordinatedThroughputController.java
+
+GUI:
+
+    src/components/src/main/java/org/apache/jmeter/control/gui/CoordinatedThroughputControllerGui.java
+
+Focused tests:
+
+    src/components/src/test/java/org/apache/jmeter/control/CoordinatedThroughputControllerTest.java
+
+Built jar:
+
+    lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar
+
+
+High-Level Design
+-----------------
+
+The plugin is implemented as a normal JMeter controller. Each instance can have
+child samplers/controllers. The special behavior is that sibling instances under
+the same immediate parent coordinate with each other so only one sibling
+Coordinated Throughput Controller runs per parent iteration.
+
+The implementation relies on JMeter's LoopIterationListener mechanism:
+
+1. JMeter compiles the test tree.
+2. TestCompiler sees that CoordinatedThroughputController implements
+   LoopIterationListener.
+3. TestCompiler registers each CoordinatedThroughputController as an iteration
+   listener on its nearest parent Controller.
+4. When the parent controller begins an iteration, it fires a LoopIterationEvent
+   to those listeners.
+5. Each CoordinatedThroughputController receives iterationStart(...), registers
+   its configured weight into a shared group, and resets itself for this
+   iteration.
+6. Later, when the parent reaches each child controller, JMeter calls next() on
+   that child.
+7. The child checks whether the shared group selected it.
+8. If selected, it returns its children normally.
+9. If not selected, it returns null immediately.
+
+This gives switch-like behavior while still using throughput percentages.
+
+
+Main Runtime Class
+------------------
+
+Class:
+
+    org.apache.jmeter.control.CoordinatedThroughputController
+
+Declaration:
+
+    public class CoordinatedThroughputController
+            extends GenericController
+            implements Serializable, LoopIterationListener, TestStateListener
+
+Why it extends GenericController:
+
+    GenericController is JMeter's standard base class for controllers that own
+    child samplers/controllers. By extending it, this plugin gets normal child
+    traversal behavior through super.next().
+
+Why it implements LoopIterationListener:
+
+    This lets the controller know when its immediate parent starts a new
+    iteration. That is the moment all sibling coordinated controllers register
+    their weights for the round.
+
+Why it implements TestStateListener:
+
+    This lets the plugin clear static coordination state at test start/end.
+    The selection balances are static so cloned controllers in different JMeter
+    threads can coordinate as one group.
+
+
+Persistent JMX Properties
+-------------------------
+
+The controller stores two properties in the JMX:
+
+    CoordinatedThroughputController.percentThroughput
+    CoordinatedThroughputController.branchId
+
+percentThroughput:
+
+    The configured throughput weight from the UI. It can be saved as a
+    FloatProperty or StringProperty. The code accepts both so JMeter can store
+    valid numeric values normally while still preserving manually-entered text
+    until runtime parsing.
+
+branchId:
+
+    A generated UUID that identifies the logical branch. It is stored so a
+    branch remains stable across JMX saves/loads.
+
+Important:
+
+    A branch id can be duplicated by copy/paste in the JMeter UI. The runtime
+    handles that safely by generating temporary unique ids inside each parent
+    iteration if duplicate saved ids are detected.
+
+
+Static Shared State
+-------------------
+
+The class has this static map:
+
+    private static final Map<GroupKey, BranchGroupState> GROUPS = new HashMap<>();
+
+Purpose:
+
+    GROUPS stores one BranchGroupState per sibling group.
+
+Why static:
+
+    JMeter clones test elements per thread. If coordination state lived only in
+    the controller instance, each thread clone could make independent decisions.
+    Static state lets thread clones coordinate globally for the same logical
+    parent group.
+
+Synchronization:
+
+    Access to GROUPS is protected by synchronized (GROUPS). BranchGroupState
+    methods are synchronized as well. This is important because JMeter threads
+    can reach the same group concurrently.
+
+
+GroupKey
+--------
+
+GroupKey identifies which controllers should coordinate together.
+
+Fields:
+
+    sourceClassName
+    sourceName
+
+Built from:
+
+    LoopIterationEvent.getSource()
+
+Meaning:
+
+    The event source is the immediate parent controller that fired the
+    iteration event. Two Coordinated Throughput Controllers coordinate if they
+    are registered under the same parent source class/name.
+
+Example:
+
+    Transaction Controller "Transaction Controller Parent"
+      Coordinated Throughput Controller A
+      Coordinated Throughput Controller B
+
+Both A and B receive events from the same TransactionController instance/name,
+so they use the same GroupKey and coordinate.
+
+If controllers are under different immediate parents, they get different
+GroupKeys and do not coordinate with each other.
+
+
+Transient Per-Instance Runtime Fields
+-------------------------------------
+
+Each controller instance keeps these transient fields:
+
+    currentGroupKey
+    currentIterationEvent
+    currentBranchId
+
+currentGroupKey:
+
+    The parent group this controller belongs to for the current parent
+    iteration.
+
+currentIterationEvent:
+
+    The exact LoopIterationEvent object for the current parent iteration.
+
+currentBranchId:
+
+    The effective id used during this round. It usually equals the saved
+    branchId, but if sibling controllers have duplicate copied ids, this can be
+    adjusted to something like:
+
+        copied-id
+        copied-id#2
+        copied-id#3
+
+Why transient:
+
+    These values are only valid while a test is running. They must not be saved
+    into the JMX or copied as permanent state.
+
+
+Constructor
+-----------
+
+The constructor sets defaults:
+
+    setPercentThroughput(100.0f);
+    setBranchId(UUID.randomUUID().toString());
+
+Default throughput is 100 so a newly-created controller behaves like a normal
+always-run controller until the user changes it.
+
+A UUID is generated immediately so every newly-added controller gets a stable
+logical id.
+
+
+Throughput Property Methods
+---------------------------
+
+setPercentThroughput(float):
+
+    Saves the value as a FloatProperty.
+
+setPercentThroughput(String):
+
+    Saves the value as a StringProperty. The GUI uses this fallback if parsing
+    user input fails, which allows the UI to preserve the entered value.
+
+getPercentThroughput():
+
+    Returns the saved value as a string for displaying in the GUI.
+
+getPercentThroughputAsFloat():
+
+    Reads the property and converts it to a float for runtime logic.
+
+If parsing fails:
+
+    The code logs a warning and uses 100.0f as the fallback value.
+
+
+Branch Id Methods
+-----------------
+
+setBranchId(String):
+
+    Saves the branch id as a StringProperty.
+
+getBranchId():
+
+    Reads the saved branch id. If it is missing or empty, the method generates
+    a UUID and saves it.
+
+This makes older or manually-edited JMX files safer because a missing branch id
+will self-heal at runtime.
+
+
+JMeter Lifecycle: iterationStart(...)
+-------------------------------------
+
+Method:
+
+    public void iterationStart(LoopIterationEvent iterEvent)
+
+This method is called by the parent controller at the beginning of a parent
+iteration.
+
+The method does four things:
+
+1. Calls reInitialize()
+
+       This resets the GenericController child traversal state so the
+       controller can be reused in this parent iteration.
+
+2. Builds currentGroupKey
+
+       currentGroupKey = GroupKey.from(iterEvent.getSource());
+
+       This identifies which sibling group this controller belongs to.
+
+3. Stores currentIterationEvent
+
+       currentIterationEvent = iterEvent;
+
+       This exact event object is used as the per-round key.
+
+4. Registers the branch weight
+
+       currentBranchId = getGroupState(currentGroupKey)
+               .register(iterEvent, getBranchId(), getPercentThroughputAsFloat());
+
+       register(...) returns the effective branch id for this round. The
+       effective id may differ from the saved id if duplicate ids were found.
+
+
+Why IdentityHashMap Is Used For Rounds
+--------------------------------------
+
+BranchGroupState stores active rounds in:
+
+    private final IdentityHashMap<LoopIterationEvent, RoundState> rounds
+
+IdentityHashMap compares keys by object identity rather than equals(...).
+
+Why this matters:
+
+    A LoopIterationEvent object represents one specific parent iteration event.
+    Using object identity avoids accidentally merging different events that may
+    have the same source and iteration count.
+
+Each parent iteration gets its own RoundState.
+
+
+JMeter Lifecycle: next()
+------------------------
+
+Method:
+
+    public Sampler next()
+
+This method is called when JMeter reaches this controller during traversal.
+
+Flow:
+
+1. If no current iteration/group is available:
+
+       return super.next();
+
+   This fallback allows normal behavior if the controller is used in an
+   unusual context where no parent iteration event has been received.
+
+2. Fetch the group state:
+
+       BranchGroupState state = getGroupState(currentGroupKey);
+
+3. Ask the group which branch was selected:
+
+       String selectedBranchId = state.getSelectedBranchId(currentIterationEvent);
+
+4. Compare selected id with this controller's effective id:
+
+       if (!branchId.equals(selectedBranchId)) {
+           state.branchCompleted(currentIterationEvent, branchId);
+           return null;
+       }
+
+   If this controller was not selected, it returns null immediately. JMeter
+   then moves on to the next sibling.
+
+5. If selected:
+
+       Sampler sampler = super.next();
+
+   super.next() performs normal GenericController traversal of the controller's
+   children.
+
+6. When selected controller finishes:
+
+       if (sampler == null) {
+           state.branchCompleted(currentIterationEvent, branchId);
+       }
+
+   This lets the group release the RoundState once all sibling controllers have
+   been processed for the round.
+
+
+isDone()
+--------
+
+Method:
+
+    public boolean isDone()
+
+Implementation:
+
+    return subControllersAndSamplers.isEmpty();
+
+Why it is this simple:
+
+    GenericController can mark itself done after its children complete. For this
+    plugin, that would prevent reuse on later parent iterations. The controller
+    must remain reusable across loops, so isDone() only returns true when the
+    controller has no children at all.
+
+
+clone()
+-------
+
+Method:
+
+    public Object clone()
+
+The clone resets transient runtime fields:
+
+    currentGroupKey = null
+    currentIterationEvent = null
+    currentBranchId = null
+
+The static GROUPS map is not cloned. That is intentional. Cloned controllers in
+different JMeter threads should coordinate through shared static group state.
+
+
+testStarted(...) And testEnded(...)
+-----------------------------------
+
+testStarted():
+
+    synchronized (GROUPS) {
+        GROUPS.clear();
+    }
+
+This clears stale selection balances at the beginning of a test.
+
+testEnded():
+
+    Calls testStarted(), which clears the same state.
+
+This avoids stale GROUPS data leaking into a later test run in the same JVM.
+
+
+readResolve()
+-------------
+
+Method:
+
+    protected Object readResolve()
+
+This method is called after deserialization. It resets transient runtime fields
+and calls super.readResolve().
+
+This matters for JMeter because test elements can be serialized/deserialized
+from JMX or cloned internally.
+
+
+BranchGroupState
+----------------
+
+BranchGroupState owns the coordination logic for one GroupKey.
+
+Fields:
+
+    IdentityHashMap<LoopIterationEvent, RoundState> rounds
+    Map<String, Double> balances
+    double noSelectionBalance
+
+rounds:
+
+    Active parent-iteration rounds. Each round stores the branch weights for
+    that specific parent iteration.
+
+balances:
+
+    Long-lived running balances for branch ids. These balances carry across
+    parent iterations and are what make the selection deterministic and
+    percentage-like over time.
+
+noSelectionBalance:
+
+    Running balance for the implicit "no coordinated child selected" option.
+    This is used when total sibling weight is below 100.
+
+
+register(...)
+-------------
+
+Method:
+
+    synchronized String register(LoopIterationEvent event, String branchId, double weight)
+
+Responsibilities:
+
+1. Find or create the RoundState for the current LoopIterationEvent.
+2. Convert duplicate saved branch ids into unique effective ids for the round.
+3. Store the normalized weight in the round.
+4. Return the effective branch id.
+
+Duplicate id handling:
+
+    String effectiveBranchId = branchId;
+    for (int copy = 2; round.weights.containsKey(effectiveBranchId); copy++) {
+        effectiveBranchId = branchId + "#" + copy;
+    }
+
+Example:
+
+    First copied controller:  copied-id
+    Second copied controller: copied-id#2
+
+This fixed the issue where two copied controllers under a Transaction
+Controller had the same saved branch id and only the first one ran.
+
+
+getSelectedBranchId(...)
+------------------------
+
+Method:
+
+    synchronized String getSelectedBranchId(LoopIterationEvent event)
+
+Responsibilities:
+
+1. Find the RoundState for the current event.
+2. If no round exists, return the no-selection sentinel.
+3. If this round has not selected a branch yet, call select(round.weights).
+4. Return the selected branch id.
+
+The selection is cached in RoundState.selectedBranchId so every sibling sees
+the same result during the same parent iteration.
+
+
+branchCompleted(...)
+--------------------
+
+Method:
+
+    synchronized void branchCompleted(LoopIterationEvent event, String branchId)
+
+Responsibilities:
+
+1. Mark this branch as completed for the current round.
+2. If all registered sibling branches have completed, remove the RoundState.
+
+Why remove the round:
+
+    The round is only needed while the parent is traversing sibling
+    Coordinated Throughput Controllers. Once all siblings have either run or
+    skipped, the round can be discarded.
+
+
+RoundState
+----------
+
+RoundState stores data for one parent iteration.
+
+Fields:
+
+    LinkedHashMap<String, Double> weights
+    Set<String> completedBranches
+    String selectedBranchId
+
+weights:
+
+    Branch id -> normalized weight for this parent iteration.
+
+Why LinkedHashMap:
+
+    It preserves registration order, which keeps tie-breaking deterministic.
+
+completedBranches:
+
+    Tracks which sibling controllers have already been processed for this
+    parent iteration.
+
+selectedBranchId:
+
+    The selected branch for this parent iteration. It is calculated only once.
+
+
+Selection Algorithm
+-------------------
+
+Method:
+
+    private String select(Map<String, Double> weights)
+
+Step 1: Sum branch weights.
+
+    totalWeight = sum(weights)
+
+Step 2: Calculate implicit no-selection weight.
+
+    noSelectionWeight = max(0, 100 - totalWeight)
+
+If totalWeight is below 100, noSelectionWeight represents the remainder.
+
+Examples:
+
+    30 + 40 = 70
+    noSelectionWeight = 30
+
+    60 + 90 = 150
+    noSelectionWeight = 0
+
+Step 3: Calculate denominator.
+
+    denominator = totalWeight + noSelectionWeight
+
+If totalWeight <= 100:
+
+    denominator = 100
+
+If totalWeight > 100:
+
+    denominator = totalWeight
+
+This is what makes below-100 behave as actual percentages with a skip
+remainder, and above-100 behave as relative weights.
+
+Step 4: Add each branch weight to its running balance.
+
+    balance = previousBalance + branchWeight
+
+The branch with the highest balance becomes the candidate selection.
+
+Step 5: Add noSelectionWeight to noSelectionBalance.
+
+If noSelectionBalance is higher than the selected branch balance, then no
+branch is selected for this parent iteration.
+
+Step 6: Subtract denominator from the selected balance.
+
+If a branch was selected:
+
+    balances[selectedBranchId] -= denominator
+
+If no branch was selected:
+
+    noSelectionBalance -= denominator
+
+This subtraction is the balancing step. It prevents the same branch from
+winning too often and carries fractional imbalance into future rounds.
+
+
+Simplified Pseudocode
+---------------------
+
+    function select(weights):
+        total = sum(weights)
+        noSelectionWeight = max(0, 100 - total)
+        denominator = total + noSelectionWeight
+
+        if denominator <= 0:
+            return NO_BRANCH_SELECTED
+
+        selected = NO_BRANCH_SELECTED
+        selectedBalance = -infinity
+
+        for each branch in weights:
+            balances[branch] += weights[branch]
+            if balances[branch] > selectedBalance:
+                selected = branch
+                selectedBalance = balances[branch]
+
+        noSelectionBalance += noSelectionWeight
+        if noSelectionBalance > selectedBalance:
+            selected = NO_BRANCH_SELECTED
+
+        if selected == NO_BRANCH_SELECTED:
+            noSelectionBalance -= denominator
+        else:
+            balances[selected] -= denominator
+
+        return selected
+
+
+Example: One Controller At 40
+-----------------------------
+
+Weights:
+
+    Controller A: 40
+    No selection: 60
+
+Denominator:
+
+    100
+
+Across 10 iterations, the balance algorithm selects A about 4 times and
+selects no branch about 6 times.
+
+The controller does not randomly sample 40%. It deterministically balances the
+running totals.
+
+
+Example: Two Controllers At 30 And 40
+-------------------------------------
+
+Weights:
+
+    Controller A: 30
+    Controller B: 40
+    No selection: 30
+
+Denominator:
+
+    100
+
+Across 10 iterations:
+
+    A runs about 3 times
+    B runs about 4 times
+    No branch runs about 3 times
+
+Only one coordinated controller can run during a parent iteration.
+
+
+Example: Total Weight Above 100
+-------------------------------
+
+Weights:
+
+    Controller A: 60
+    Controller B: 90
+
+Total:
+
+    150
+
+No selection:
+
+    0
+
+Denominator:
+
+    150
+
+The split becomes relative:
+
+    A = 60 / 150 = 40%
+    B = 90 / 150 = 60%
+
+
+Example: Decimal Weights
+------------------------
+
+Weights:
+
+    A: 1.4
+    B: 1.5
+    C: 1.6
+
+Total:
+
+    4.5
+
+No selection:
+
+    95.5
+
+Across 1000 parent iterations:
+
+    A runs 14 times
+    B runs 15 times
+    C runs 16 times
+    No branch is selected 955 times
+
+The code uses double internally for balances, so fractional weights are carried
+forward rather than rounded before selection.
+
+
+Zero, Negative, NaN, And Infinite Weights
+-----------------------------------------
+
+Method:
+
+    normalizedWeight(double weight)
+
+Behavior:
+
+    NaN       -> 0
+    Infinite  -> 0
+    <= 0      -> 0
+    positive  -> unchanged
+
+This prevents bad values from breaking denominator calculations.
+
+
+GUI Class
+---------
+
+Class:
+
+    org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui
+
+Extends:
+
+    AbstractControllerGui
+
+Responsibilities:
+
+1. Create a CoordinatedThroughputController test element.
+2. Save the GUI field value into the runtime controller.
+3. Load the runtime controller value back into the GUI.
+4. Display the static label:
+
+       Coordinated Throughput Controller
+
+5. Render the Throughput weight field.
+
+
+GUI createTestElement()
+-----------------------
+
+Method:
+
+    public TestElement createTestElement()
+
+Flow:
+
+    CoordinatedThroughputController controller = new CoordinatedThroughputController();
+    modifyTestElement(controller);
+    return controller;
+
+This is called when a new controller is added in the JMeter UI.
+
+
+GUI modifyTestElement(...)
+--------------------------
+
+Method:
+
+    public void modifyTestElement(TestElement element)
+
+Flow:
+
+1. Calls configureTestElement(element)
+
+       This saves standard JMeter fields such as name, comments, enabled flag,
+       GUI class, and test class.
+
+2. Casts to CoordinatedThroughputController.
+
+3. Reads the text from the Throughput weight field.
+
+4. Tries to parse it as a float.
+
+5. If parsing succeeds, saves FloatProperty.
+
+6. If parsing fails, saves StringProperty.
+
+The StringProperty fallback preserves user input, but valid numeric input is
+expected for normal runtime behavior.
+
+
+GUI configure(...)
+------------------
+
+Method:
+
+    public void configure(TestElement element)
+
+This is called when the UI displays an existing test element.
+
+It calls super.configure(element), then sets the text field from:
+
+    ((CoordinatedThroughputController) element).getPercentThroughput()
+
+
+GUI clearGui()
+--------------
+
+Method:
+
+    public void clearGui()
+
+This resets the GUI to default values:
+
+    throughput weight = 100
+
+
+GUI Layout
+----------
+
+The GUI uses:
+
+    BorderLayout
+    MigLayout("fillx, wrap 2, insets 0", "[][fill,grow]")
+
+The title/name/comment panel comes from:
+
+    makeTitlePanel()
+
+The throughput row is added below it.
+
+The throughput field was changed from a BorderLayout.CENTER field to MigLayout
+so it does not become an oversized tall/wide box in the UI. The field now
+aligns with normal JMeter form rows.
+
+
+Tests
+-----
+
+Test class:
+
+    CoordinatedThroughputControllerTest
+
+The tests build small in-memory JMeter trees using:
+
+    ListedHashTree
+    TestCompiler
+    LoopController
+    TransactionController
+    TestSampler
+
+This is important because LoopIterationListener registration happens during
+TestCompiler traversal. Directly instantiating controllers without compiling
+the tree would not fully simulate JMeter runtime behavior.
+
+
+Test: twoEqualControllersRunOneChildPerIteration
+------------------------------------------------
+
+Verifies:
+
+    50 / 50 sibling controllers split evenly.
+
+Expected result over 10 iterations:
+
+    A = 5
+    B = 5
+
+
+Test: selectedControllerRunsAllChildrenAndSiblingsDoNotRun
+----------------------------------------------------------
+
+Verifies:
+
+    When a coordinated controller is selected, all of its children can run.
+    The sibling coordinated controller does not run in the same parent
+    iteration.
+
+The test allows either A-first or B-first ordering because JMeter listener
+registration order can affect the first deterministic pick.
+
+
+Test: singleControllerBelow100RunsOnlyConfiguredShare
+-----------------------------------------------------
+
+Verifies:
+
+    One controller at 40 runs 40 times over 100 parent iterations.
+
+This protects the bug where a single controller below 100 used to run every
+time.
+
+
+Test: controllersBelow100LeaveRemainderUnselected
+-------------------------------------------------
+
+Verifies:
+
+    20 + 30 leaves 50% no-selection remainder.
+
+Expected result over 100 iterations:
+
+    A = 20
+    B = 30
+    no branch = 50
+
+
+Test: fractionalWeightsAreHandledAsPercentages
+----------------------------------------------
+
+Verifies:
+
+    Decimal values are handled correctly.
+
+Weights:
+
+    A = 1.4
+    B = 1.5
+    C = 1.6
+
+Expected result over 1000 iterations:
+
+    A = 14
+    B = 15
+    C = 16
+
+
+Test: duplicateSavedBranchIdsAreSeparatedUnderTransactionController
+-------------------------------------------------------------------
+
+Verifies:
+
+    Two copied controllers with the same saved branch id still behave as
+    separate sibling branches under a Transaction Controller.
+
+Weights:
+
+    A = 30
+    B = 40
+
+Expected result over 100 iterations:
+
+    A = 30
+    B = 40
+
+This test was added after a real JMX file showed both copied controllers had
+the same CoordinatedThroughputController.branchId.
+
+
+Test: controllersAt100RunExactlyOneControllerPerIteration
+---------------------------------------------------------
+
+Verifies:
+
+    40 + 60 runs exactly one coordinated controller in every parent iteration.
+
+Expected result over 100 iterations:
+
+    A = 40
+    B = 60
+
+
+Test: controllersAbove100AreNormalizedAsRelativeWeights
+-------------------------------------------------------
+
+Verifies:
+
+    Total weights above 100 are treated as relative weights.
+
+Weights:
+
+    A = 60
+    B = 90
+
+Expected result over 50 iterations:
+
+    A = 20
+    B = 30
+
+
+Test: zeroWeightedControllersAreSkipped
+---------------------------------------
+
+Verifies:
+
+    Zero-weight branches do not run.
+
+
+Test: distributionIsSharedAcrossClonedThreadControllers
+-------------------------------------------------------
+
+Verifies:
+
+    Cloned controller instances still coordinate through shared static state.
+
+This simulates JMeter's per-thread clone behavior.
+
+
+Test: guiUsesCoordinatedThroughputControllerName
+------------------------------------------------
+
+Verifies:
+
+    The GUI static label is exactly:
+
+        Coordinated Throughput Controller
+
+
+Test Helpers
+------------
+
+compiledLoop(...)
+
+    Builds a LoopController, adds child elements, runs TestCompiler traversal,
+    then initializes the loop. This simulates normal JMeter compilation enough
+    for LoopIterationListener wiring.
+
+compiledTransactionLoop(...)
+
+    Builds:
+
+        LoopController
+          TransactionController
+            CoordinatedThroughputController...
+
+    It also sets JMeterVariables into JMeterContextService because
+    TransactionController expects thread variables when it creates its
+    transaction sample.
+
+controller(...)
+
+    Creates a CoordinatedThroughputController with a name, weight, and child
+    TestSampler instances.
+
+setSavedBranchId(...)
+
+    Forces duplicate branch ids in tests to simulate copied JMX elements.
+
+nextNamesUntilDone(...)
+
+    Calls controller.next() until the loop is done and records sampler names.
+
+
+Packaging
+---------
+
+The jar contains these classes:
+
+    org/apache/jmeter/control/CoordinatedThroughputController.class
+    org/apache/jmeter/control/CoordinatedThroughputController$BranchGroupState.class
+    org/apache/jmeter/control/CoordinatedThroughputController$GroupKey.class
+    org/apache/jmeter/control/CoordinatedThroughputController$RoundState.class
+    org/apache/jmeter/control/gui/CoordinatedThroughputControllerGui.class
+
+Jar build command used:
+
+    jar cf lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar \
+      -C src/components/build/classes/java/main org/apache/jmeter/control/CoordinatedThroughputController.class \
+      -C src/components/build/classes/java/main org/apache/jmeter/control/CoordinatedThroughputController\$BranchGroupState.class \
+      -C src/components/build/classes/java/main org/apache/jmeter/control/CoordinatedThroughputController\$GroupKey.class \
+      -C src/components/build/classes/java/main org/apache/jmeter/control/CoordinatedThroughputController\$RoundState.class \
+      -C src/components/build/classes/java/main org/apache/jmeter/control/gui/CoordinatedThroughputControllerGui.class
+
+After rebuilding, copy the jar into target JMeter:
+
+    cp lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar \
+      /Users/kuamit/Workspace/JMeter/apache-jmeter-5.6.3/lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar
+
+Restart JMeter after replacing the jar.
+
+
+Verification Commands
+---------------------
+
+Focused tests:
+
+    ./gradlew :src:components:test --tests org.apache.jmeter.control.CoordinatedThroughputControllerTest -PchecksumIgnore
+
+Jar contents:
+
+    jar tf lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar
+
+Class check:
+
+    javap -classpath lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar \
+      org.apache.jmeter.control.CoordinatedThroughputController
+
+    javap -classpath lib/ext/jmeter-coordinated-throughput-controller-0.1.0.jar \
+      org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui
+
+
+Important Maintenance Notes
+---------------------------
+
+1. Do not remove static GROUPS unless replacing it with another shared
+   cross-thread coordination mechanism. Per-instance state will make cloned
+   JMeter thread controllers evaluate independently.
+
+2. Do not let GenericController.isDone() behavior leak back in. This controller
+   must remain reusable across parent iterations.
+
+3. Keep duplicate branch id handling. Users commonly copy/paste controllers in
+   JMeter, and copied JMX can retain the same branchId.
+
+4. Keep the no-selection branch. It is required for totals below 100. Without
+   it, 30 + 40 would normalize to 43/57 instead of producing a 30% skip
+   remainder.
+
+5. Keep tests using TestCompiler. That is how JMeter registers
+   LoopIterationListener relationships.
+
+6. If changing GroupKey, be careful. It controls the coordination boundary.
+   Making the key too broad can cause unrelated controllers to coordinate.
+   Making it too narrow can cause sibling controllers not to coordinate.
+
+
+Debugging Tips
+--------------
+
+If only the first sibling runs:
+
+    Check whether copied controllers have the same saved branch id. Current
+    code should handle this, so also confirm the updated jar is loaded and
+    JMeter was restarted.
+
+If every parent iteration runs a branch when total weight is below 100:
+
+    Check noSelectionWeight and denominator logic in select(...).
+
+If two siblings run in the same parent iteration:
+
+    Check that RoundState.selectedBranchId is cached and that each sibling uses
+    the same currentIterationEvent.
+
+If percentages look wrong across threads:
+
+    Check that GROUPS is static and that testStarted() is not being called too
+    often during a running test.
+
+If a controller stops running after the first loop:
+
+    Check isDone() and reInitialize() in iterationStart(...).
+
+
+Mental Model For The Runtime
+----------------------------
+
+Think of each sibling Coordinated Throughput Controller as a candidate in a
+single election held by the parent controller on each parent iteration.
+
+The parent iteration event creates the election round.
+
+Each sibling registers:
+
+    "I am branch X and my weight is W."
+
+The group chooses one candidate or chooses "no branch."
+
+When JMeter later asks each sibling for its next sampler:
+
+    - the selected sibling behaves like a normal GenericController
+    - every non-selected sibling returns null immediately
+
+After all siblings have been visited, the round is discarded, but the running
+balances remain for future iterations.
+

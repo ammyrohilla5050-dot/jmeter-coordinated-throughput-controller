@@ -1,0 +1,23 @@
+[
+  {
+    "id": "coordinated-throughput-controller",
+    "name": "Coordinated Throughput Controller",
+    "description": "Coordinates sibling JMeter logic-controller branches so one weighted branch is selected per parent iteration.",
+    "screenshotUrl": "",
+    "helpUrl": "file:///Users/kuamit/Downloads/apache-jmeter-5.6.3/external/coordinated-throughput-controller/README.md",
+    "vendor": "Local",
+    "markerClass": "org.apache.jmeter.control.CoordinatedThroughputController",
+    "componentClasses": [
+      "org.apache.jmeter.control.CoordinatedThroughputController",
+      "org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui"
+    ],
+    "versions": {
+      "0.1.0": {
+        "downloadUrl": "file:///Users/kuamit/Downloads/apache-jmeter-5.6.3/external/coordinated-throughput-controller/dist/jmeter-coordinated-throughput-controller-0.1.0.jar",
+        "changes": "Initial external release.",
+        "libs": {},
+        "depends": []
+      }
+    }
+  }
+]
