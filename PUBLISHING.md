@@ -96,7 +96,7 @@ Before opening the PR, replace every placeholder:
 
 ```text
 ammyrohilla5050-dot
-Amit Rohilla
+Amit Kumar
 ```
 
 with real values.
