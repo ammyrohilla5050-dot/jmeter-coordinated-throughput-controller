@@ -104,7 +104,7 @@ publishing {
             pom {
                 name.set("Coordinated Throughput Controller")
                 description.set(project.description)
-                url.set("https://github.com/your-org/jmeter-coordinated-throughput-controller")
+                url.set("https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller")
                 licenses {
                     license {
                         name.set("Apache License, Version 2.0")

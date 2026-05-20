@@ -3,8 +3,8 @@
   "name": "Coordinated Throughput Controller",
   "description": "A JMeter Logic Controller that coordinates sibling branches so one weighted branch is selected per parent iteration. If sibling weights add up to less than 100, the remainder intentionally selects no coordinated branch.",
   "screenshotUrl": "",
-  "helpUrl": "https://github.com/your-org/jmeter-coordinated-throughput-controller",
-  "vendor": "Your Name or Organization",
+  "helpUrl": "https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller",
+  "vendor": "Amit Rohilla",
   "markerClass": "org.apache.jmeter.control.CoordinatedThroughputController",
   "componentClasses": [
     "org.apache.jmeter.control.CoordinatedThroughputController",
@@ -13,7 +13,7 @@
   "versions": {
     "0.1.0": {
       "changes": "Initial public release.",
-      "downloadUrl": "https://github.com/your-org/jmeter-coordinated-throughput-controller/releases/download/v0.1.0/jmeter-coordinated-throughput-controller-0.1.0.jar",
+      "downloadUrl": "https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.0/jmeter-coordinated-throughput-controller-0.1.0.jar",
       "depends": [
         "jmeter-core",
         "jmeter-components"

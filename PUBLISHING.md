@@ -95,8 +95,8 @@ site/dat/repo/various.json
 Before opening the PR, replace every placeholder:
 
 ```text
-your-org
-Your Name or Organization
+ammyrohilla5050-dot
+Amit Rohilla
 ```
 
 with real values.
