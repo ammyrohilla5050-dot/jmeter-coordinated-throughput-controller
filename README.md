@@ -27,6 +27,18 @@ controller selection where sibling controllers are mutually exclusive and only o
 In all cases, the selected controller runs its child samplers/controllers normally.
 Non-selected sibling controllers return no sampler for that parent iteration.
 
+## Requirements
+
+| Requirement | Value |
+| --- | --- |
+| Requires Java Version | Java 8 or later |
+| JMeter Version | Apache JMeter 5.6.3 or later |
+| External Dependencies | Fully standalone plugin JAR. No additional external dependency JARs are required beyond Apache JMeter. |
+
+## Screenshot
+
+![Coordinated Throughput Controller GUI](docs/Coordinated_Throughput_Controller.png)
+
 ## Install
 
 1. Download `jmeter-coordinated-throughput-controller-0.1.0.jar`.
