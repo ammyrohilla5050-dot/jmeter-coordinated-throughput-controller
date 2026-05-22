@@ -3,7 +3,7 @@
 Coordinated Throughput Controller is an external Apache JMeter logic controller
 that coordinates sibling controller branches under the same parent. During each
 parent iteration, sibling Coordinated Throughput Controllers make one shared
-selection decision, so only one coordinated branch runs. If the configured
+selection decision, so only one coordinated branch (controller) runs. If the configured
 weights add up to less than 100, some parent iterations intentionally run none
 of the coordinated branches.
 
@@ -11,7 +11,7 @@ of the coordinated branches.
 
 JMeter's standard Throughput Controller evaluates each sibling independently.
 If two sibling controllers are both configured at 50%, both can run in the same
-parent iteration. This plugin is for test plans that need weighted branch
+parent iteration. This plugin is for test plans that need weighted
 selection where sibling alternatives are mutually exclusive.
 
 ## Install
