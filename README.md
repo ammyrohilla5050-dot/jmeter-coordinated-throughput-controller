@@ -7,6 +7,15 @@ selection decision, so only one coordinated controller runs. If the configured
 weights add up to less than 100, some parent iterations intentionally run none
 of the coordinated controllers.
 
+
+## Why This Exists
+
+JMeter's standard Throughput Controller evaluates each sibling independently.
+If two sibling controllers are both configured at 50%, both can run in the same
+parent iteration. This plugin is for test plans that need weighted
+controller selection where sibling controllers are mutually exclusive and only one controller run at any given iteration.
+
+
 ## Weight Behavior
 
 | Use case | Example setup | What the controller does | Expected result |
@@ -17,13 +26,6 @@ of the coordinated controllers.
 
 In all cases, the selected controller runs its child samplers/controllers normally.
 Non-selected sibling controllers return no sampler for that parent iteration.
-
-## Why This Exists
-
-JMeter's standard Throughput Controller evaluates each sibling independently.
-If two sibling controllers are both configured at 50%, both can run in the same
-parent iteration. This plugin is for test plans that need weighted
-controller selection where sibling controllers are mutually exclusive and only one controller run at any given iteration.
 
 ## Install
 
