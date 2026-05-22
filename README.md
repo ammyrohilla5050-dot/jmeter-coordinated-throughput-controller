@@ -23,7 +23,7 @@ Non-selected sibling controllers return no sampler for that parent iteration.
 JMeter's standard Throughput Controller evaluates each sibling independently.
 If two sibling controllers are both configured at 50%, both can run in the same
 parent iteration. This plugin is for test plans that need weighted
-controller selection where sibling controllers are mutually exclusive.
+controller selection where sibling controllers are mutually exclusive and only one controller run at any given iteration.
 
 ## Install
 
@@ -62,16 +62,6 @@ dist/jmeter-coordinated-throughput-controller-0.1.0.jar
 dist/jmeter-coordinated-throughput-controller-0.1.0.zip
 ```
 
-The `repo/` directory contains JMeter Plugins Manager PR helpers:
-
-```text
-repo/various-entry.template.json
-repo/wiki/CoordinatedThroughputController.md
-```
-
-Use `various-entry.template.json` as the object to add to
-`undera/jmeter-plugins/site/dat/repo/various.json` after replacing the GitHub
-owner/repository placeholders with the real release URL.
 
 ## Plugin Classes
 
