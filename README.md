@@ -40,6 +40,9 @@ Non-selected sibling controllers return no sampler for that parent iteration.
 ![Coordinated Throughput Controller GUI](docs/Coordinated_Throughput_Controller.png)
 
 ## Install
+1. Search 'Coordinated Throughput Controller' in ypur plugin manager available in jmeter and click 'Apply changes and Restart JMeter' ( if plugin manager is not available under Options, first download plugin manager jar and place it in <JMETER_HOME>/lib/ext/ folder
+
+OR
 
 1. Download `jmeter-coordinated-throughput-controller-0.1.0.jar`.
 2. Copy it to:
