@@ -32,30 +32,17 @@ Non-selected sibling controllers return no sampler for that parent iteration.
 | Requirement | Value |
 | --- | --- |
 | Requires Java Version | Java 8 or later |
-| JMeter Version | Apache JMeter 5.5 or later |
+| JMeter Version | Apache JMeter 5.5 or later. Checked with JMeter 5.5, 5.6, 5.6.1, 5.6.2, and 5.6.3. |
 | External Dependencies | Fully standalone plugin JAR. No additional external dependency JARs are required beyond Apache JMeter. |
 
-## Version Compatibility
+## Not Supported Cases
 
-| Plugin version | Apache JMeter version | Java version | Notes |
-| --- | --- | --- | --- |
-| `0.1.1` or later | Apache JMeter 5.5 or later | Java 8 or later | Recommended version. Includes nested controller handling for common real-world test plans. |
-| `0.1.0` | Apache JMeter 5.5 or later | Java 8 or later | Initial public release. Upgrade to `0.1.1` or later when using nested controllers inside this controller. |
+Do not use Coordinated Throughput Controller directly under these parent
+controllers when you need exact coordinated distribution:
 
-Compatibility has been checked with Apache JMeter `5.5`, `5.6`, `5.6.1`,
-`5.6.2`, and `5.6.3`.
-
-## Cases To Avoid
-
-Do not use Coordinated Throughput Controller directly under the following
-special parent controllers when you need exact coordinated distribution:
-
-| Parent placement | Why to avoid it | Safer approach |
-| --- | --- | --- |
-| Extra Loop Controller as the direct parent of sibling Coordinated Throughput Controllers | The explicit Loop Controller has its own loop lifecycle, so the coordinated group might not be evaluated once per outer business iteration as expected. | Put the Coordinated Throughput Controllers under a Simple/Generic/Transaction parent, or put the Loop Controller inside the selected Coordinated Throughput Controller. |
-| Random Controller as the direct parent | Random Controller does not visit every sibling controller on each iteration, so sibling Coordinated Throughput Controllers cannot make one shared decision reliably. | Use Coordinated Throughput Controller for the selection decision instead of Random Controller. |
-| Once Only Controller as the direct parent | Once Only Controller gives only one pass, so percentage distribution such as 50/50 is order-dependent and cannot stabilize over iterations. | Put Once Only setup steps outside the coordinated weighted flow. |
-| Copied extra Loop Controller parents with the same name and copied Coordinated Throughput Controller branch IDs | This structure can produce ambiguous grouping when the explicit Loop Controller parent is copied. | Rename copied parent controllers and avoid copying saved branch IDs, or place the coordinated group under a Simple/Generic/Transaction parent. |
+1. Loop Controller as the direct parent of Coordinated Throughput Controllers.
+2. Random Controller as the direct parent.
+3. Once Only Controller as the direct parent.
 
 ## Screenshot
 
