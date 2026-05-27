@@ -54,6 +54,8 @@ controllers when you need exact coordinated distribution:
    available under Options, first download the Plugins Manager jar and place it
    in the `<JMETER_HOME>/lib/ext/` folder.
 
+![Coordinated Throughput Controller in JMeter Plugins Manager](docs/PluginManager-CTC.png)
+
 OR
 
 1. Download `https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar`.
