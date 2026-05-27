@@ -18,10 +18,13 @@
 package org.apache.jmeter.control;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -60,11 +63,16 @@ public class CoordinatedThroughputController
 
     private static final Map<GroupKey, BranchGroupState> GROUPS = new HashMap<>();
 
+    private static final ThreadLocal<SourceRegistry> SOURCE_REGISTRY =
+            ThreadLocal.withInitial(SourceRegistry::new);
+
     private transient GroupKey currentGroupKey;
 
     private transient LoopIterationEvent currentIterationEvent;
 
     private transient String currentBranchId;
+
+    private transient ControllerTreeSnapshot controllerTreeSnapshot;
 
     public CoordinatedThroughputController() {
         setPercentThroughput(100.0f);
@@ -135,6 +143,7 @@ public class CoordinatedThroughputController
 
     @Override
     public void iterationStart(LoopIterationEvent iterEvent) {
+        restoreControllerTree();
         reInitialize();
         currentGroupKey = GroupKey.from(iterEvent.getSource());
         currentIterationEvent = iterEvent;
@@ -144,7 +153,9 @@ public class CoordinatedThroughputController
 
     @Override
     public boolean isDone() {
-        return subControllersAndSamplers.isEmpty();
+        // Returning null means skipped or complete for this parent iteration,
+        // not permanently removable from the parent controller tree.
+        return false;
     }
 
     @Override
@@ -153,6 +164,7 @@ public class CoordinatedThroughputController
         clone.currentGroupKey = null;
         clone.currentIterationEvent = null;
         clone.currentBranchId = null;
+        clone.controllerTreeSnapshot = null;
         return clone;
     }
 
@@ -161,6 +173,7 @@ public class CoordinatedThroughputController
         synchronized (GROUPS) {
             GROUPS.clear();
         }
+        SOURCE_REGISTRY.remove();
     }
 
     @Override
@@ -184,7 +197,16 @@ public class CoordinatedThroughputController
         currentGroupKey = null;
         currentIterationEvent = null;
         currentBranchId = null;
+        controllerTreeSnapshot = null;
         return this;
+    }
+
+    private void restoreControllerTree() {
+        if (controllerTreeSnapshot == null) {
+            controllerTreeSnapshot = ControllerTreeSnapshot.capture(this);
+        } else {
+            controllerTreeSnapshot.restore();
+        }
     }
 
     private static BranchGroupState getGroupState(GroupKey key) {
@@ -196,14 +218,45 @@ public class CoordinatedThroughputController
     private static class GroupKey {
         private final String sourceClassName;
         private final String sourceName;
+        private final List<String> childSignature;
+        private final int sourceOccurrence;
 
-        private GroupKey(String sourceClassName, String sourceName) {
+        private GroupKey(
+                String sourceClassName,
+                String sourceName,
+                List<String> childSignature,
+                int sourceOccurrence) {
             this.sourceClassName = sourceClassName;
             this.sourceName = sourceName;
+            this.childSignature = childSignature;
+            this.sourceOccurrence = sourceOccurrence;
         }
 
         static GroupKey from(TestElement source) {
-            return new GroupKey(source.getClass().getName(), source.getName());
+            String sourceClassName = source.getClass().getName();
+            String sourceName = source.getName();
+            List<String> childSignature = childSignature(source);
+            SourceKey sourceKey = new SourceKey(sourceClassName, sourceName, childSignature);
+            int sourceOccurrence = SOURCE_REGISTRY.get().sourceOccurrence(source, sourceKey);
+            return new GroupKey(sourceClassName, sourceName, childSignature, sourceOccurrence);
+        }
+
+        private static List<String> childSignature(TestElement source) {
+            if (!(source instanceof GenericController)) {
+                return Collections.emptyList();
+            }
+
+            List<String> signature = new ArrayList<>();
+            for (TestElement child : ((GenericController) source).subControllersAndSamplers) {
+                if (child instanceof CoordinatedThroughputController) {
+                    CoordinatedThroughputController controller = (CoordinatedThroughputController) child;
+                    signature.add(child.getClass().getName() + ':' + controller.getBranchId());
+                } else {
+                    signature.add(child.getClass().getName() + ':' + child.getName());
+                }
+            }
+            Collections.sort(signature);
+            return Collections.unmodifiableList(signature);
         }
 
         @Override
@@ -216,12 +269,110 @@ public class CoordinatedThroughputController
             }
             GroupKey groupKey = (GroupKey) o;
             return Objects.equals(sourceClassName, groupKey.sourceClassName)
-                    && Objects.equals(sourceName, groupKey.sourceName);
+                    && Objects.equals(sourceName, groupKey.sourceName)
+                    && Objects.equals(childSignature, groupKey.childSignature)
+                    && sourceOccurrence == groupKey.sourceOccurrence;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(sourceClassName, sourceName);
+            return Objects.hash(sourceClassName, sourceName, childSignature, sourceOccurrence);
+        }
+    }
+
+    private static class SourceKey {
+        private final String sourceClassName;
+        private final String sourceName;
+        private final List<String> childSignature;
+
+        SourceKey(String sourceClassName, String sourceName, List<String> childSignature) {
+            this.sourceClassName = sourceClassName;
+            this.sourceName = sourceName;
+            this.childSignature = childSignature;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof SourceKey)) {
+                return false;
+            }
+            SourceKey sourceKey = (SourceKey) o;
+            return Objects.equals(sourceClassName, sourceKey.sourceClassName)
+                    && Objects.equals(sourceName, sourceKey.sourceName)
+                    && Objects.equals(childSignature, sourceKey.childSignature);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(sourceClassName, sourceName, childSignature);
+        }
+    }
+
+    private static class SourceRegistry {
+        private final IdentityHashMap<TestElement, Integer> occurrencesBySource = new IdentityHashMap<>();
+        private final Map<SourceKey, Integer> nextOccurrenceByKey = new HashMap<>();
+
+        int sourceOccurrence(TestElement source, SourceKey sourceKey) {
+            Integer sourceOccurrence = occurrencesBySource.get(source);
+            if (sourceOccurrence != null) {
+                return sourceOccurrence;
+            }
+
+            int occurrence = nextOccurrenceByKey.getOrDefault(sourceKey, 0);
+            nextOccurrenceByKey.put(sourceKey, occurrence + 1);
+            occurrencesBySource.put(source, occurrence);
+            return occurrence;
+        }
+    }
+
+    private static class ControllerTreeSnapshot {
+        private final LinkedHashMap<GenericController, List<TestElement>> childrenByController =
+                new LinkedHashMap<>();
+
+        static ControllerTreeSnapshot capture(GenericController root) {
+            ControllerTreeSnapshot snapshot = new ControllerTreeSnapshot();
+            snapshot.captureController(root);
+            return snapshot;
+        }
+
+        void restore() {
+            for (Map.Entry<GenericController, List<TestElement>> entry : childrenByController.entrySet()) {
+                GenericController controller = entry.getKey();
+                controller.subControllersAndSamplers.clear();
+                controller.subControllersAndSamplers.addAll(entry.getValue());
+            }
+            boolean rootController = true;
+            for (GenericController controller : childrenByController.keySet()) {
+                if (rootController) {
+                    rootController = false;
+                    continue;
+                }
+                resetController(controller);
+            }
+        }
+
+        private void captureController(GenericController controller) {
+            List<TestElement> children = new ArrayList<>(controller.subControllersAndSamplers);
+            childrenByController.put(controller, Collections.unmodifiableList(children));
+            for (TestElement child : children) {
+                if (child instanceof GenericController) {
+                    captureController((GenericController) child);
+                }
+            }
+        }
+
+        private static void resetController(GenericController controller) {
+            controller.reInitialize();
+            controller.resetCurrent();
+            controller.resetIterCount();
+            controller.setFirst(true);
+            controller.setDone(false);
+            if (controller instanceof LoopController) {
+                ((LoopController) controller).resetLoopCount();
+            }
         }
     }
 

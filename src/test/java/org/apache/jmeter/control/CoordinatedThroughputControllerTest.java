@@ -67,6 +67,47 @@ public class CoordinatedThroughputControllerTest {
     }
 
     @Test
+    public void selectedControllerCanRunTransactionChildOnEachSelectedIteration() {
+        LoopController loop = compiledLoop(10,
+                controllerWithChildren("A", 50.0f,
+                        transaction("A Transaction", new NamedSampler("A"))),
+                controllerWithChildren("B", 50.0f,
+                        transaction("B Transaction", new NamedSampler("B"))));
+
+        Map<String, Integer> counts = counts(nextNamesUntilDone(loop));
+        assertEquals(5, counts.get("A"));
+        assertEquals(5, counts.get("B"));
+    }
+
+    @Test
+    public void selectedControllerCanRunLoopChildOnEachSelectedIteration() {
+        LoopController loop = compiledLoop(10,
+                controllerWithChildren("A", 50.0f,
+                        nestedLoop("A Loop", 1, new NamedSampler("A"))),
+                controllerWithChildren("B", 50.0f,
+                        nestedLoop("B Loop", 1, new NamedSampler("B"))));
+
+        Map<String, Integer> counts = counts(nextNamesUntilDone(loop));
+        assertEquals(5, counts.get("A"));
+        assertEquals(5, counts.get("B"));
+    }
+
+    @Test
+    public void selectedControllerRunsAllSamplersInsideNestedControllerEverySelectedIteration() {
+        LoopController loop = compiledLoop(4,
+                controllerWithChildren("A", 50.0f,
+                        transaction("A Transaction", new NamedSampler("A1"), new NamedSampler("A2"))),
+                controllerWithChildren("B", 50.0f,
+                        transaction("B Transaction", new NamedSampler("B1"), new NamedSampler("B2"))));
+
+        Map<String, Integer> counts = counts(nextNamesUntilDone(loop));
+        assertEquals(2, counts.get("A1"));
+        assertEquals(2, counts.get("A2"));
+        assertEquals(2, counts.get("B1"));
+        assertEquals(2, counts.get("B2"));
+    }
+
+    @Test
     public void singleControllerBelow100RunsOnlyConfiguredShare() {
         LoopController loop = compiledLoop(100,
                 controller("A", 40.0f, "A"));
@@ -113,6 +154,22 @@ public class CoordinatedThroughputControllerTest {
     }
 
     @Test
+    public void sameNamedParentControllersDoNotShareDistribution() {
+        CoordinatedThroughputController first = controller("Copied Controller", 50.0f, "A");
+        CoordinatedThroughputController second = controller("Copied Controller", 50.0f, "B");
+        setSavedBranchId(first, "copied-parent-branch");
+        setSavedBranchId(second, "copied-parent-branch");
+
+        LoopController loop = compiledSameNamedParentLoop(10,
+                first,
+                second);
+
+        Map<String, Integer> counts = counts(nextNamesUntilDone(loop));
+        assertEquals(5, counts.get("A"));
+        assertEquals(5, counts.get("B"));
+    }
+
+    @Test
     public void controllersAt100RunExactlyOneControllerPerIteration() {
         LoopController loop = compiledLoop(100,
                 controller("A", 40.0f, "A"),
@@ -144,7 +201,7 @@ public class CoordinatedThroughputControllerTest {
     }
 
     @Test
-    public void distributionIsSharedAcrossClonedThreadControllers() {
+    public void distributionIsSharedAcrossClonedThreadControllers() throws InterruptedException {
         CoordinatedThroughputController firstTemplate = controller("A", 50.0f);
         CoordinatedThroughputController secondTemplate = controller("B", 50.0f);
 
@@ -155,9 +212,13 @@ public class CoordinatedThroughputControllerTest {
                 cloneWithSampler(firstTemplate, "A"),
                 cloneWithSampler(secondTemplate, "B"));
 
-        List<String> names = new ArrayList<>();
-        names.addAll(nextNamesUntilDone(firstThread));
-        names.addAll(nextNamesUntilDone(secondThread));
+        List<String> names = Collections.synchronizedList(new ArrayList<>());
+        Thread threadOne = new Thread(() -> names.addAll(nextNamesUntilDone(firstThread)));
+        Thread threadTwo = new Thread(() -> names.addAll(nextNamesUntilDone(secondThread)));
+        threadOne.start();
+        threadTwo.start();
+        threadOne.join();
+        threadTwo.join();
         assertEquals(1, count(names, "A"), names.toString());
         assertEquals(1, count(names, "B"), names.toString());
     }
@@ -180,7 +241,7 @@ public class CoordinatedThroughputControllerTest {
             if (child instanceof CoordinatedThroughputController) {
                 ((CoordinatedThroughputController) child).testStarted();
             }
-            child.setRunningVersion(true);
+            setRunningVersionRecursively(child);
             tree.add(loop, child);
         }
 
@@ -218,6 +279,45 @@ public class CoordinatedThroughputControllerTest {
         return loop;
     }
 
+    private static LoopController compiledSameNamedParentLoop(
+            int loops,
+            CoordinatedThroughputController first,
+            CoordinatedThroughputController second) {
+        JMeterContextService.getContext().setVariables(new JMeterVariables());
+
+        LoopController loop = new LoopController();
+        loop.setName("loop");
+        loop.setLoops(loops);
+        loop.setContinueForever(false);
+
+        TransactionController firstParent = sameNamedTransactionParent("first");
+        TransactionController secondParent = sameNamedTransactionParent("second");
+
+        ListedHashTree tree = new ListedHashTree();
+        tree.add(loop);
+        tree.add(loop, firstParent);
+        tree.add(loop, secondParent);
+        first.testStarted();
+        second.testStarted();
+        first.setRunningVersion(true);
+        second.setRunningVersion(true);
+        tree.add(firstParent, first);
+        tree.add(secondParent, second);
+
+        TestCompiler.initialize();
+        tree.traverse(new TestCompiler(tree));
+        loop.setRunningVersion(true);
+        loop.initialize();
+        return loop;
+    }
+
+    private static TransactionController sameNamedTransactionParent(String id) {
+        TransactionController parent = new TransactionController();
+        parent.setName("Same Transaction Parent");
+        parent.setProperty(new StringProperty("ctc.test.parent.id", id));
+        return parent;
+    }
+
     private static CoordinatedThroughputController controller(String name, float percentage, String... samplerNames) {
         CoordinatedThroughputController controller = new CoordinatedThroughputController();
         controller.setName(name);
@@ -226,6 +326,46 @@ public class CoordinatedThroughputControllerTest {
             controller.addTestElement(new NamedSampler(samplerName));
         }
         return controller;
+    }
+
+    private static CoordinatedThroughputController controllerWithChildren(
+            String name, float percentage, TestElement... children) {
+        CoordinatedThroughputController controller = new CoordinatedThroughputController();
+        controller.setName(name);
+        controller.setPercentThroughput(percentage);
+        for (TestElement child : children) {
+            controller.addTestElement(child);
+        }
+        return controller;
+    }
+
+    private static TransactionController transaction(String name, TestElement... children) {
+        TransactionController controller = new TransactionController();
+        controller.setName(name);
+        for (TestElement child : children) {
+            controller.addTestElement(child);
+        }
+        return controller;
+    }
+
+    private static LoopController nestedLoop(String name, int loops, TestElement... children) {
+        LoopController controller = new LoopController();
+        controller.setName(name);
+        controller.setLoops(loops);
+        controller.setContinueForever(false);
+        for (TestElement child : children) {
+            controller.addTestElement(child);
+        }
+        return controller;
+    }
+
+    private static void setRunningVersionRecursively(TestElement element) {
+        element.setRunningVersion(true);
+        if (element instanceof GenericController) {
+            for (TestElement child : ((GenericController) element).subControllersAndSamplers) {
+                setRunningVersionRecursively(child);
+            }
+        }
     }
 
     private static void setSavedBranchId(CoordinatedThroughputController controller, String branchId) {
