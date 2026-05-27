@@ -62,13 +62,14 @@ special parent controllers when you need exact coordinated distribution:
 ![Coordinated Throughput Controller GUI](docs/Coordinated_Throughput_Controller.png)
 
 ## Install
-1. Search 'Coordinated Throughput Controller' in ypur plugin manager available in jmeter and click 'Apply changes and Restart JMeter' ( if plugin manager is not available under Options, first download plugin manager jar and place it in <JMETER_HOME>/lib/ext/ folder
+1. Search `Coordinated Throughput Controller` in the JMeter Plugins Manager
+   and click `Apply changes and Restart JMeter`. If Plugins Manager is not
+   available under Options, first download the Plugins Manager jar and place it
+   in the `<JMETER_HOME>/lib/ext/` folder.
 
 OR
 
-1. Download the latest `jmeter-coordinated-throughput-controller-<version>.jar`
-   from GitHub Releases or install it with JMeter Plugins Manager when
-   available.
+1. Download `https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar`.
 2. Copy it to:
 
    ```text
@@ -77,31 +78,6 @@ OR
 
 3. Restart JMeter.
 4. Add it from the Logic Controller menu as `Coordinated Throughput Controller`.
-
-## Build
-
-From this directory:
-
-```bash
-../../gradlew build releaseZip
-```
-
-When built inside a JMeter source checkout, the build uses the local JMeter
-JARs from `src/*/build/libs`. Outside a JMeter source checkout, it resolves
-Apache JMeter artifacts from Maven Central. Override the JMeter version with:
-
-```bash
-../../gradlew build -PjmeterVersion=5.6.3
-```
-
-## Release Artifacts
-
-The build writes release files to `dist/`:
-
-```text
-dist/jmeter-coordinated-throughput-controller-<version>.jar
-dist/jmeter-coordinated-throughput-controller-<version>.zip
-```
 
 ## Support and Bug Reports
 
@@ -124,20 +100,6 @@ When reporting a bug, include:
 
 For general JMeter Plugins questions, you can also use the JMeter Plugins
 community forum.
-
-## Plugin Classes
-
-Runtime class:
-
-```text
-org.apache.jmeter.control.CoordinatedThroughputController
-```
-
-GUI class:
-
-```text
-org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui
-```
 
 ## License
 
