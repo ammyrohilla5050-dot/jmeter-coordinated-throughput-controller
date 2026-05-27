@@ -12,8 +12,8 @@
       "org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui"
     ],
     "versions": {
-      "0.1.0": {
-        "downloadUrl": "file:///Users/kuamit/Downloads/apache-jmeter-5.6.3/external/coordinated-throughput-controller/dist/jmeter-coordinated-throughput-controller-0.1.0.jar",
+      "0.1.1": {
+        "downloadUrl": "file:///Users/kuamit/Downloads/apache-jmeter-5.6.3/external/coordinated-throughput-controller/dist/jmeter-coordinated-throughput-controller-0.1.1.jar",
         "changes": "Initial external release.",
         "libs": {},
         "depends": []

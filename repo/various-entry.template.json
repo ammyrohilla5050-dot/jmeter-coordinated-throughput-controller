@@ -11,9 +11,9 @@
     "org.apache.jmeter.control.gui.CoordinatedThroughputControllerGui"
   ],
   "versions": {
-    "0.1.0": {
+    "0.1.1": {
       "changes": "Initial public release.",
-      "downloadUrl": "https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.0/jmeter-coordinated-throughput-controller-0.1.0.jar",
+      "downloadUrl": "https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar",
       "depends": [
         "jmeter-core",
         "jmeter-components"

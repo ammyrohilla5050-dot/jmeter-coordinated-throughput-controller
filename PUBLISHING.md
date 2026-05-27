@@ -53,8 +53,8 @@ dist/
 Release artifacts:
 
 ```text
-dist/jmeter-coordinated-throughput-controller-0.1.0.jar
-dist/jmeter-coordinated-throughput-controller-0.1.0.zip
+dist/jmeter-coordinated-throughput-controller-0.1.1.jar
+dist/jmeter-coordinated-throughput-controller-0.1.1.zip
 ```
 
 ## 3. Create a GitHub release
@@ -62,14 +62,14 @@ dist/jmeter-coordinated-throughput-controller-0.1.0.zip
 Create tag:
 
 ```text
-v0.1.0
+v0.1.1
 ```
 
 Upload:
 
 ```text
-jmeter-coordinated-throughput-controller-0.1.0.jar
-jmeter-coordinated-throughput-controller-0.1.0.zip
+jmeter-coordinated-throughput-controller-0.1.1.jar
+jmeter-coordinated-throughput-controller-0.1.1.zip
 ```
 
 ## 4. Prepare the `undera/jmeter-plugins` PR
@@ -104,7 +104,7 @@ with real values.
 The release `downloadUrl` should point to the GitHub release JAR:
 
 ```text
-https://github.com/<owner>/jmeter-coordinated-throughput-controller/releases/download/v0.1.0/jmeter-coordinated-throughput-controller-0.1.0.jar
+https://github.com/<owner>/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar
 ```
 
 Since this plugin has no third-party runtime libraries beyond JMeter itself,
@@ -131,7 +131,7 @@ Then include that file in the same PR.
 Copy:
 
 ```text
-dist/jmeter-coordinated-throughput-controller-0.1.0.jar
+dist/jmeter-coordinated-throughput-controller-0.1.1.jar
 ```
 
 to:

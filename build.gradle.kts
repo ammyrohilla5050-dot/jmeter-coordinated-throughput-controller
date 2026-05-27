@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "org.apache.jmeter.plugins"
-version = "0.1.0"
+version = "0.1.1"
 description = "Coordinated Throughput Controller for Apache JMeter"
 
 java {
