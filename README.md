@@ -58,7 +58,7 @@ controllers when you need exact coordinated distribution:
 
 OR
 
-1. Download `https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar`.
+1. Download [jmeter-coordinated-throughput-controller-0.1.1.jar](https://github.com/ammyrohilla5050-dot/jmeter-coordinated-throughput-controller/releases/download/v0.1.1/jmeter-coordinated-throughput-controller-0.1.1.jar).
 2. Copy it to:
 
    ```text
