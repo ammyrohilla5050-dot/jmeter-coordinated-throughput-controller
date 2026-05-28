@@ -86,13 +86,11 @@ val releaseZip by tasks.registering(Zip::class) {
         include("jmeter-coordinated-throughput-controller-${project.version}.jar")
     }
     from(layout.projectDirectory) {
-        include("README.md", "PUBLISHING.md", "LICENSE", "NOTICE")
+        include("README.md", "LICENSE", "NOTICE")
     }
     from(layout.projectDirectory.dir("docs")) {
         into("docs")
-    }
-    from(layout.projectDirectory.dir("repo")) {
-        into("repo")
+        include("Coordinated_Throughput_Controller.png", "PluginManager-CTC.png")
     }
 }
 
