@@ -27,6 +27,15 @@ controller selection where sibling controllers are mutually exclusive and only o
 In all cases, the selected controller runs its child samplers/controllers normally.
 Non-selected sibling controllers return no sampler for that parent iteration.
 
+## Sample JMX
+
+A small flight-booking example is available here:
+[flight-booking-coordinated-throughput-controller.jmx](examples/flight-booking-coordinated-throughput-controller.jmx).
+
+It contains one thread group showing the standard Throughput Controller behavior
+and another thread group showing the same flow fixed with Coordinated Throughput
+Controller.
+
 ## Requirements
 
 | Requirement | Value |
