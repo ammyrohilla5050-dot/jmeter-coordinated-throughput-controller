@@ -1,5 +1,7 @@
 # Coordinated Throughput Controller
 
+[![PerfAtlas](https://img.shields.io/badge/PerfAtlas-View_Plugin-b0d600?style=for-the-badge&logo=apachejmeter&logoColor=white)](https://plugins.jmeter.ai/plugin/coordinated-throughput-controller/)
+
 Coordinated Throughput Controller is an external Apache JMeter logic controller
 that coordinates sibling controllers under the same parent. During each
 parent iteration, sibling Coordinated Throughput Controllers make one shared
