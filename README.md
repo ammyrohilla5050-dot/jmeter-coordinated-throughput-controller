@@ -99,7 +99,7 @@ When reporting a bug, include:
   Controller
 
 For general JMeter Plugins questions, you can also use the JMeter Plugins
-community forum.
+community forum or reach me out on linkdin - https://www.linkedin.com/in/kuamit50
 
 ## License
 
